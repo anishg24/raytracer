@@ -8,6 +8,7 @@
 
 #include <iostream>
 #include <thread>
+#include <chrono>
 
 color ray_color(const ray &r, const hittable &world, int depth) {
     hit_record rec;
@@ -89,8 +90,9 @@ struct render_data {
 
 void render_scanline(render_data data, std::vector<color> *buf) {
     int max_depth = 50;
-//    for (int j = data.idx ; j < data.idx + data.num; j++) {
-    for (int j = data.image_height - 1 - data.idx; j >= data.image_height - 1 - data.idx - data.num; j--) {
+    int idx = data.image_height - 1 - data.idx;
+    int stop = fmax(idx + 1 - data.num, 0);
+    for (int j = idx; j >= stop; --j) {
         for (int i = 0; i < data.image_width; ++i) {
             color pixel_color(0, 0, 0);
             for (int s = 0; s < data.samples_per_pixel; ++s) {
@@ -103,9 +105,12 @@ void render_scanline(render_data data, std::vector<color> *buf) {
             buf->push_back(pixel_color);
         }
     }
+    std::cerr << "Finished rendering lines " << data.idx << " to " << data.image_height - stop << std::endl;
 }
 
 int main() {
+
+    std::cerr << "Setting up image information... ";
 
     // Image
     const double aspect_ratio = 16. / 9.;
@@ -120,8 +125,10 @@ int main() {
 //    const int samples_per_pixel = 500;
 //    const int max_depth = 50;
 
+    std::cerr << "Done." << std::endl << "Setting up the world... ";
+
     // World
-//    hittable_list world = random_scene();
+    // hittable_list world = random_scene();
     hittable_list world;
 
     shared_ptr<lambertian> material_ground = make_shared<lambertian>(color(0.8, 0.8, 0.0));
@@ -134,35 +141,42 @@ int main() {
     world.add(make_shared<sphere>(point3(-1.0, 0.0, -1.), 0.5, material_left));
     world.add(make_shared<sphere>(point3(1.0, 0.0, -1.), 0.5, material_right));
 
+    std::cerr << "Done." << std::endl << "Setting up the camera... ";
+
     // Camera
 
     point3 lookfrom(3, 3, 2);
     point3 lookat(0, 0, -1);
     vec3 vup(0, 1, 0);
-    auto dist_to_focus = (lookfrom - lookat).length();
-    auto aperture = 2.0;
+    double dist_to_focus = (lookfrom - lookat).length();
+    double aperture = 2.0;
 
     camera cam(lookfrom, lookat, vup, 20, aspect_ratio, aperture, dist_to_focus);
+
+    std::cerr << "Done. " << std::endl << "STARTING RENDER" << std::endl;
 
     // Render
 
     std::cout << "P3\n" << image_width << ' ' << image_height << "\n255\n";
 
     // We have 225 lines to print out
-    // 225 lines / 15 threads = 15 lines per thread
     int num_threads = 15;
-    int num_scanlines_per_thread = 15;
+    int scanlinesPerThread = ceil(float(image_height) / float(num_threads));
+
+    std::cerr << "Rendering on " << num_threads << " threads ("
+              << scanlinesPerThread << " lines per process)" << std::endl;
 
     // Store our threads and colors for later
     std::vector<std::thread> threads;
     std::vector<std::vector<color>*> buffer;
 
-    // Spawn our new threads with the data that they require
+    auto start = std::chrono::steady_clock::now();
+    // Spawn our new threads with the data
     for (int p = 0; p < num_threads; p++) {
-        // This could be optimized, but how?
+        // This could be optimized...
         render_data data(
-                p * num_scanlines_per_thread,
-                num_scanlines_per_thread,
+                p * scanlinesPerThread,
+                scanlinesPerThread,
                 cam,
                 world,
                 image_width,
@@ -175,25 +189,31 @@ int main() {
         // Spawn the new thread
         std::thread thread(render_scanline, data, buf);
 
+        std::cerr << "Started rendering on lines " << p * scanlinesPerThread << " to "
+        << (int)fmin(p * scanlinesPerThread + scanlinesPerThread, image_height) << std::endl;
+
         // Save the new thread and buffer
         threads.push_back(std::move(thread));
         buffer.push_back(buf);
     }
 
+    int counter = 0;
+
     // Ensure all jobs are finished then print out the colors
     for (int t = 0; t < threads.size(); t++) {
         threads[t].join();
-        // There seems to be a bug that makes the image transposed of what it should actually be.
-        // This is likely due to choosing a different (and rather odd) range of values for j in the render function
-        // The way I "fixed" this is changing the ranges in the render function but this resulted in the image being
-        // cropped slightly and having some shearing if you look hard enough
-        // A possible fix could be using a queue or a FIFO data structure
-        for (auto line : *buffer[t]){
+        for (color line : *buffer[t]){
             write_color(std::cout, line, samples_per_pixel);
+            counter ++;
         }
     }
 
-    std::cerr << "\nDone.\n";
+    auto end = std::chrono::steady_clock::now();
+
+    auto diff = end - start;
+
+    std::cerr << counter << " lines written" << std::endl << "Finished rendering in "
+              << std::chrono::duration<double, std::milli>(diff).count() << "ms" << std::endl;
 
     return 0;
 }
