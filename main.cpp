@@ -148,12 +148,18 @@ int main() {
 
     std::cout << "P3\n" << image_width << ' ' << image_height << "\n255\n";
 
+    // We have 225 lines to print out
+    // 225 lines / 15 threads = 15 lines per thread
     int num_threads = 15;
     int num_scanlines_per_thread = 15;
 
+    // Store our threads and colors for later
     std::vector<std::thread> threads;
     std::vector<std::vector<color>*> buffer;
+
+    // Spawn our new threads with the data that they require
     for (int p = 0; p < num_threads; p++) {
+        // This could be optimized, but how?
         render_data data(
                 p * num_scanlines_per_thread,
                 num_scanlines_per_thread,
@@ -163,16 +169,25 @@ int main() {
                 image_height,
                 samples_per_pixel
                 );
-        // num_scanlines_per_thread
+        // Create a buffer that we will write data to
         std::vector<color> *buf = new std::vector<color>();
+
+        // Spawn the new thread
         std::thread thread(render_scanline, data, buf);
 
+        // Save the new thread and buffer
         threads.push_back(std::move(thread));
         buffer.push_back(buf);
     }
 
+    // Ensure all jobs are finished then print out the colors
     for (int t = 0; t < threads.size(); t++) {
         threads[t].join();
+        // There seems to be a bug that makes the image transposed of what it should actually be.
+        // This is likely due to choosing a different (and rather odd) range of values for j in the render function
+        // The way I "fixed" this is changing the ranges in the render function but this resulted in the image being
+        // cropped slightly and having some shearing if you look hard enough
+        // A possible fix could be using a queue or a FIFO data structure
         for (auto line : *buffer[t]){
             write_color(std::cout, line, samples_per_pixel);
         }
