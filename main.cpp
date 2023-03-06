@@ -7,7 +7,7 @@
 #include "camera.h"
 
 #include <iostream>
-#include <pthread.h>
+#include <thread>
 
 color ray_color(const ray &r, const hittable &world, int depth) {
     hit_record rec;
@@ -87,9 +87,8 @@ struct render_data {
     const int &samples_per_pixel;
 };
 
-std::vector<color> render_scanline(render_data &data) {
+void render_scanline(render_data data, std::vector<color> *buf) {
     int max_depth = 50;
-    std::vector<color> result;
     for (int j = data.idx ; j < data.idx + data.num; j++) {
         for (int i = 0; i < data.image_width; ++i) {
             color pixel_color(0, 0, 0);
@@ -100,10 +99,9 @@ std::vector<color> render_scanline(render_data &data) {
                 ray r = data.cam.get_ray(u, v);
                 pixel_color += ray_color(r, data.world, max_depth);
             }
-            result.push_back(pixel_color);
+            buf->push_back(pixel_color);
         }
     }
-    return result;
 }
 
 int main() {
@@ -149,13 +147,11 @@ int main() {
 
     std::cout << "P3\n" << image_width << ' ' << image_height << "\n255\n";
 
-    vec3 buffer[image_height][image_width];
-
     int num_threads = 15;
     int num_scanlines_per_thread = 15;
 
-    int idx = 0;
-    std::vector<std::vector<color>> buf;
+    std::vector<std::thread> threads;
+    std::vector<std::vector<color>*> buffer;
     for (int p = 0; p < num_threads; p++) {
         render_data data(
                 p * num_scanlines_per_thread,
@@ -166,14 +162,18 @@ int main() {
                 image_height,
                 samples_per_pixel
                 );
+        // num_scanlines_per_thread
+        std::vector<color> *buf = new std::vector<color>();
+        std::thread thread(render_scanline, data, buf);
 
-        std::vector<color> colors = render_scanline(data);
-        buf.push_back(colors);
+        threads.push_back(std::move(thread));
+        buffer.push_back(buf);
     }
 
-    for (std::vector<color> col: buf) {
-        for (color c: col) {
-            write_color(std::cout, c, samples_per_pixel);
+    for (int t = 0; t < threads.size(); t++) {
+        threads[t].join();
+        for (auto line : *buffer[t]){
+            write_color(std::cout, line, samples_per_pixel);
         }
     }
 
