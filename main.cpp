@@ -89,7 +89,8 @@ struct render_data {
 
 void render_scanline(render_data data, std::vector<color> *buf) {
     int max_depth = 50;
-    for (int j = data.idx ; j < data.idx + data.num; j++) {
+//    for (int j = data.idx ; j < data.idx + data.num; j++) {
+    for (int j = data.image_height - 1 - data.idx; j >= data.image_height - 1 - data.idx - data.num; j--) {
         for (int i = 0; i < data.image_width; ++i) {
             color pixel_color(0, 0, 0);
             for (int s = 0; s < data.samples_per_pixel; ++s) {
@@ -176,21 +177,6 @@ int main() {
             write_color(std::cout, line, samples_per_pixel);
         }
     }
-
-//    for (int j = image_height - 1; j >= image_height; --j) {
-//        std::cerr << "\rScanlines remaining: " << j << ' ' << std::flush;
-//        for (int i = 0; i < image_width; ++i) {
-//            color pixel_color(0, 0, 0);
-//            for (int s = 0; s < samples_per_pixel; ++ s) {
-//                double u = (i + random_double()) / (image_width - 1);
-//                double v = (j + random_double()) / (image_height - 1);
-//
-//                ray r = cam.get_ray(u, v);
-//                pixel_color += ray_color(r, world, max_depth);
-//            }
-//            write_color(std::cout, pixel_color, samples_per_pixel);
-//        }
-//    }
 
     std::cerr << "\nDone.\n";
 
