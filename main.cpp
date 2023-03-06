@@ -7,6 +7,7 @@
 #include "camera.h"
 
 #include <iostream>
+#include <pthread.h>
 
 color ray_color(const ray &r, const hittable &world, int depth) {
     hit_record rec;
@@ -33,8 +34,8 @@ hittable_list random_scene() {
     world.add(make_shared<sphere>(point3(0, -1000, 0), 1000, ground_material));
 
     double radius = 0.2;
-    for (int a = -11; a < 11; a ++) {
-        for (int b = -11; b < 11; b ++) {
+    for (int a = -11; a < 11; a++) {
+        for (int b = -11; b < 11; b++) {
             double choose_mat = random_double();
             point3 center(a + 0.9 * random_double(), radius, b + 0.9 * random_double());
 
@@ -73,42 +74,74 @@ hittable_list random_scene() {
     return world;
 }
 
+struct render_data {
+    render_data(int i, int n, camera &c, hittable_list &w, const int &iw,
+                const int &ih, const int &s) : idx(i), num(n), cam(c), world(w), image_width(iw), image_height(ih),
+                                   samples_per_pixel(s) {}
+    int idx;
+    int num;
+    camera &cam;
+    hittable_list &world;
+    const int &image_width;
+    const int &image_height;
+    const int &samples_per_pixel;
+};
+
+std::vector<color> render_scanline(render_data &data) {
+    int max_depth = 50;
+    std::vector<color> result;
+    for (int j = data.idx ; j < data.idx + data.num; j++) {
+        for (int i = 0; i < data.image_width; ++i) {
+            color pixel_color(0, 0, 0);
+            for (int s = 0; s < data.samples_per_pixel; ++s) {
+                double u = (i + random_double()) / (data.image_width - 1);
+                double v = (j + random_double()) / (data.image_height - 1);
+
+                ray r = data.cam.get_ray(u, v);
+                pixel_color += ray_color(r, data.world, max_depth);
+            }
+            result.push_back(pixel_color);
+        }
+    }
+    return result;
+}
+
 int main() {
 
     // Image
-//    const double aspect_ratio = 16. / 9.;
-//    const int image_width = 400;
-//    const int image_height = static_cast<int>(image_width / aspect_ratio);
-//    const int samples_per_pixel = 100;
-//    const int max_depth = 50;
-
-    const double aspect_ratio = 3. / 2.;
-    const int image_width = 1200;
+    const double aspect_ratio = 16. / 9.;
+    const int image_width = 400;
     const int image_height = static_cast<int>(image_width / aspect_ratio);
-    const int samples_per_pixel = 500;
+    const int samples_per_pixel = 100;
     const int max_depth = 50;
 
+//    const double aspect_ratio = 3. / 2.;
+//    const int image_width = 1200;
+//    const int image_height = static_cast<int>(image_width / aspect_ratio);
+//    const int samples_per_pixel = 500;
+//    const int max_depth = 50;
+
     // World
-    hittable_list world = random_scene();
-//    hittable_list world;
-//
-//    shared_ptr<lambertian> material_ground = make_shared<lambertian>(color(0.8, 0.8, 0.0));
-//    shared_ptr<lambertian> material_center = make_shared<lambertian>(color(0.1, 0.2, 0.5));
-//    shared_ptr<dielectric> material_left = make_shared<dielectric>(1.5);
-//    shared_ptr<metal> material_right = make_shared<metal>(color(0.8, 0.6, 0.2), 1.0);
-//
-//    world.add(make_shared<sphere>(point3(0.0, -100.5, -1.), 100.0, material_ground));
-//    world.add(make_shared<sphere>(point3(0.0, 0.0, -1.), 0.5, material_center));
-//    world.add(make_shared<sphere>(point3(-1.0, 0.0, -1.), 0.5, material_left));
-//    world.add(make_shared<sphere>(point3(1.0, 0.0, -1.), 0.5, material_right));
+//    hittable_list world = random_scene();
+    hittable_list world;
+
+    shared_ptr<lambertian> material_ground = make_shared<lambertian>(color(0.8, 0.8, 0.0));
+    shared_ptr<lambertian> material_center = make_shared<lambertian>(color(0.1, 0.2, 0.5));
+    shared_ptr<dielectric> material_left = make_shared<dielectric>(1.5);
+    shared_ptr<metal> material_right = make_shared<metal>(color(0.8, 0.6, 0.2), 1.0);
+
+    world.add(make_shared<sphere>(point3(0.0, -100.5, -1.), 100.0, material_ground));
+    world.add(make_shared<sphere>(point3(0.0, 0.0, -1.), 0.5, material_center));
+    world.add(make_shared<sphere>(point3(-1.0, 0.0, -1.), 0.5, material_left));
+    world.add(make_shared<sphere>(point3(1.0, 0.0, -1.), 0.5, material_right));
 
     // Camera
 
-    point3 lookfrom(13, 2, 3);
-    point3 lookat(0, 0, 0);
+    point3 lookfrom(3, 3, 2);
+    point3 lookat(0, 0, -1);
     vec3 vup(0, 1, 0);
-    double dist_to_focus = 10;
-    double aperture = 0.1;
+    auto dist_to_focus = (lookfrom - lookat).length();
+    auto aperture = 2.0;
 
     camera cam(lookfrom, lookat, vup, 20, aspect_ratio, aperture, dist_to_focus);
 
@@ -116,20 +149,48 @@ int main() {
 
     std::cout << "P3\n" << image_width << ' ' << image_height << "\n255\n";
 
-    for (int j = image_height - 1; j >= 0; --j) {
-        std::cerr << "\rScanlines remaining: " << j << ' ' << std::flush;
-        for (int i = 0; i < image_width; ++i) {
-            color pixel_color(0, 0, 0);
-            for (int s = 0; s < samples_per_pixel; ++ s) {
-                double u = (i + random_double()) / (image_width - 1);
-                double v = (j + random_double()) / (image_height - 1);
+    vec3 buffer[image_height][image_width];
 
-                ray r = cam.get_ray(u, v);
-                pixel_color += ray_color(r, world, max_depth);
-            }
-            write_color(std::cout, pixel_color, samples_per_pixel);
+    int num_threads = 15;
+    int num_scanlines_per_thread = 15;
+
+    int idx = 0;
+    std::vector<std::vector<color>> buf;
+    for (int p = 0; p < num_threads; p++) {
+        render_data data(
+                p * num_scanlines_per_thread,
+                num_scanlines_per_thread,
+                cam,
+                world,
+                image_width,
+                image_height,
+                samples_per_pixel
+                );
+
+        std::vector<color> colors = render_scanline(data);
+        buf.push_back(colors);
+    }
+
+    for (std::vector<color> col: buf) {
+        for (color c: col) {
+            write_color(std::cout, c, samples_per_pixel);
         }
     }
+
+//    for (int j = image_height - 1; j >= image_height; --j) {
+//        std::cerr << "\rScanlines remaining: " << j << ' ' << std::flush;
+//        for (int i = 0; i < image_width; ++i) {
+//            color pixel_color(0, 0, 0);
+//            for (int s = 0; s < samples_per_pixel; ++ s) {
+//                double u = (i + random_double()) / (image_width - 1);
+//                double v = (j + random_double()) / (image_height - 1);
+//
+//                ray r = cam.get_ray(u, v);
+//                pixel_color += ray_color(r, world, max_depth);
+//            }
+//            write_color(std::cout, pixel_color, samples_per_pixel);
+//        }
+//    }
 
     std::cerr << "\nDone.\n";
 
