@@ -227,18 +227,13 @@ int main() {
             double g = line.y();
             double b = line.z();
 
-
             r = sqrt(scale * r);
             g = sqrt(scale * g);
             b = sqrt(scale * b);
 
-            r = static_cast<int>(256 * clamp(r, 0.0, 0.999));
-            g = static_cast<int>(256 * clamp(g, 0.0, 0.999));
-            b = static_cast<int>(256 * clamp(b, 0.0, 0.999));
-
-            image_data[index++] = (unsigned char) r;
-            image_data[index++] = (unsigned char) g;
-            image_data[index++] = (unsigned char) b;
+            image_data[index++] = static_cast<unsigned char>(256 * clamp(r, 0.0, 0.999));
+            image_data[index++] = static_cast<unsigned char>(256 * clamp(g, 0.0, 0.999));
+            image_data[index++] = static_cast<unsigned char>(256 * clamp(b, 0.0, 0.999));
 
             counter ++;
         }
