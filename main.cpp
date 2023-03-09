@@ -6,6 +6,9 @@
 #include "sphere.h"
 #include "camera.h"
 
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
+
 #include <iostream>
 #include <thread>
 #include <chrono>
@@ -110,13 +113,21 @@ void render_scanline(render_data data, std::vector<color> *buf) {
 
 int main() {
 
-    std::cerr << "Setting up image information... ";
+    std::cerr << "Loading the image buffer...";
+
+    std::cerr << "Done." << std::endl << "Setting up image information... ";
 
     // Image
     const double aspect_ratio = 16. / 9.;
     const int image_width = 400;
     const int image_height = static_cast<int>(image_width / aspect_ratio);
     const int samples_per_pixel = 100;
+
+    // Gamma correction (gamma = 2) and anti-aliasing calculation
+    double scale = 1. / samples_per_pixel;
+
+    // Final image buffer (width * height * channels)
+    unsigned char image_data[image_height * image_width * 3];
 
 //    const double aspect_ratio = 3. / 2.;
 //    const int image_width = 1200;
@@ -188,6 +199,9 @@ int main() {
                 samples_per_pixel
                 );
         // Create a buffer that we will write data to
+        // Note that this buffer isn't 2D, it's a 1D buffer meant to represent a 2D section
+        // This is not what's intended but works because of how we handle threads in the loop below, ensuring that
+        // we get the pixel colors in the sequence that we want them to.
         std::vector<color> *buf = new std::vector<color>();
 
         // Spawn the new thread
@@ -202,12 +216,30 @@ int main() {
     }
 
     int counter = 0;
+    int index = 0;
 
     // Ensure all jobs are finished then print out the colors
     for (int t = 0; t < threads.size(); t++) {
         threads[t].join();
         for (color line : *buffer[t]){
-            write_color(std::cout, line, samples_per_pixel);
+//            write_color(std::cout, line, samples_per_pixel);
+            double r = line.x();
+            double g = line.y();
+            double b = line.z();
+
+
+            r = sqrt(scale * r);
+            g = sqrt(scale * g);
+            b = sqrt(scale * b);
+
+            r = static_cast<int>(256 * clamp(r, 0.0, 0.999));
+            g = static_cast<int>(256 * clamp(g, 0.0, 0.999));
+            b = static_cast<int>(256 * clamp(b, 0.0, 0.999));
+
+            image_data[index++] = (unsigned char) r;
+            image_data[index++] = (unsigned char) g;
+            image_data[index++] = (unsigned char) b;
+
             counter ++;
         }
     }
@@ -215,6 +247,8 @@ int main() {
     auto end = std::chrono::steady_clock::now();
 
     auto diff = end - start;
+
+    stbi_write_png("image.png", image_width, image_height, 3, image_data, image_width * 3);
 
     std::cerr << counter << " lines written" << std::endl << "Finished rendering in "
               << std::chrono::duration<double, std::milli>(diff).count() << "ms" << std::endl;
